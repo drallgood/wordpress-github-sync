@@ -31,9 +31,7 @@ class WordPress_GitHub_Sync_Post {
 	/**
 	 * Instantiates a new Post object
 	 *
-	 * $id_or_path - (int|string) either a postID (WordPress) or a path to a file (GitHub)
-	 *
-	 * Returns the Post object, duh
+	 * @param int|string $id_or_path either a postID (WordPress) or a path to a file (GitHub)
 	 */
 	public function __construct( $id_or_path ) {
 		$this->api = new WordPress_GitHub_Sync_Api;
@@ -133,6 +131,14 @@ class WordPress_GitHub_Sync_Post {
 	}
 
 	/**
+	 * Returns true if the post has a password
+	 * @return bool
+	 */
+	public function has_password() {
+		return ! empty( $this->post->post_password );
+	}
+
+	/**
 	 * Combines the 2 content parts for GitHub
 	 */
 	public function github_content() {
@@ -159,13 +165,12 @@ class WordPress_GitHub_Sync_Post {
 		if ( function_exists( 'wpmarkdown_html_to_markdown' ) ) {
 			$content = wpmarkdown_html_to_markdown( $content );
 		} else if ( class_exists( 'WPCom_Markdown' ) ) {
-			$wpcomMd = WPCom_Markdown::get_instance();
-			if ( $wpcomMd->is_markdown( $this->post->ID ) ) {
+			if ( WPCom_Markdown::get_instance()->is_markdown( $this->post->ID ) ) {
 				$content = $this->post->post_content_filtered;
 			}
 		}
 
-		return $content;
+		return apply_filters( 'wpghs_content_export', $content, $this );
 	}
 
 	/**
@@ -209,12 +214,43 @@ class WordPress_GitHub_Sync_Post {
 	 */
 	public function github_filename() {
 		if ( 'post' === $this->type() ) {
-			$filename = get_the_time( 'Y-m-d-', $this->id ) . $this->name() . '.md';
+			$filename = get_the_time( 'Y-m-d-', $this->id ) . $this->get_name() . '.md';
 		} else {
-			$filename = $this->name() . '.md';
+			$filename = $this->get_name() . '.md';
 		}
 
 		return apply_filters( 'wpghs_filename', $filename, $this );
+	}
+
+	/**
+	 * Returns a post slug we can use in the GitHub filename
+	 *
+	 * @return string
+	 */
+	protected function get_name() {
+		if ( '' !== $this->name() ) {
+			return $this->name();
+		}
+
+		return sanitize_title( get_the_title( $this->post ) );
+	}
+
+	/**
+	 * Returns the URL for the post on GitHub.
+	 *
+	 * @return string
+	 */
+	public function github_view_url() {
+		return 'https://github.com/' . $this->api->repository() . '/blob/master/' . $this->github_path();
+	}
+
+	/**
+	 * Returns the URL for the post on GitHub.
+	 *
+	 * @return string
+	 */
+	public function github_edit_url() {
+		return 'https://github.com/' . $this->api->repository() . '/edit/master/' . $this->github_path();
 	}
 
 	/**
@@ -279,6 +315,8 @@ class WordPress_GitHub_Sync_Post {
 
 	/**
 	 * Save the sha to post
+	 *
+	 * @param string $sha
 	 */
 	public function set_sha( $sha ) {
 		update_post_meta( $this->id, '_sha', $sha );
@@ -293,7 +331,7 @@ class WordPress_GitHub_Sync_Post {
 		$meta = array(
 			'ID'           => $this->post->ID,
 			'post_title'   => get_the_title( $this->post ),
-			'author'       => get_userdata( $this->post->post_author )->display_name,
+			'author'       => ( $author = get_userdata( $this->post->post_author ) ) ? $author->display_name : '',
 			'post_date'    => $this->post->post_date,
 			'post_excerpt' => $this->post->post_excerpt,
 			'layout'       => get_post_type( $this->post ),

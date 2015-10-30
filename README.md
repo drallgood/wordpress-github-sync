@@ -1,9 +1,9 @@
 # WordPress <--> GitHub Sync #
-**Contributors:** BenBalter, JamesDiGioia  
+**Contributors:** benbalter, JamesDiGioia  
 **Tags:** github, git, version control, content, collaboration, publishing  
-**Requires at least:** 3.8  
-**Tested up to:** 4.1  
-**Stable tag:** 1.0.0  
+**Requires at least:** 3.9  
+**Tested up to:** 4.3.1  
+**Stable tag:** 1.3.3  
 **License:** GPLv2  
 **License URI:** http://www.gnu.org/licenses/gpl-2.0.html  
 
@@ -11,7 +11,7 @@
 
 *A WordPress plugin to sync content with a GitHub repository (or Jekyll site)*
 
-[![Build Status](https://travis-ci.org/benbalter/wordpress-github-sync.svg)](https://travis-ci.org/benbalter/wordpress-github-sync)
+[![Build Status](https://travis-ci.org/benbalter/wordpress-github-sync.svg?branch=master)](https://travis-ci.org/benbalter/wordpress-github-sync)
 
 Ever wish you could collaboratively author content for your WordPress site (or expose change history publicly and accept pull requests from your readers)?
 
@@ -22,17 +22,13 @@ Well, now you can! Introducing [WordPress <--> GitHub Sync](https://github.com/b
 ### WordPress <--> GitHub Sync does three things: ###
 
 1. Allows content publishers to version their content in GitHub, exposing "who made what change when" to readers
-
 2. Allows readers to submit proposed improvements to WordPress-served content via GitHub's Pull Request model
-
 3. Allows non-technical writers to draft and edit a Jekyll site in WordPress's best-of-breed editing interface
 
 ### WordPress <--> GitHub sync might be able to do some other cool things: ###
 
 * Allow teams to collaboratively write and edit posts using GitHub (e.g., pull requests, issues, comments)
-
 * Allow you to sync the content of two different WordPress installations via GitHub
-
 * Allow you to stage and preview content before "deploying" to your production server
 
 ### How it works ###
@@ -40,7 +36,6 @@ Well, now you can! Introducing [WordPress <--> GitHub Sync](https://github.com/b
 The sync action is based on two hooks:
 
 1. A per-post sync fired in response to WordPress's `save_post` hook which pushes content to GitHub
-
 2. A sync of all changed files trigged by GitHub's `push` webhook (outbound API call)
 
 ## Installation ##
@@ -92,38 +87,75 @@ WordPress <--> GitHub Sync exports all posts as `.md` files for better display o
 
 You can also activate the Markdown module from [Jetpack](https://wordpress.org/plugins/jetpack/) or the standalone [JP Markdown](https://wordpress.org/plugins/jetpack-markdown/) to save in Markdown and export that version to GitHub.
 
+### Importing from GitHub ###
+
+WordPress <--> GitHub Sync is also capable of importing posts directly from GitHub, without creating them in WordPress before hand. In order to have your post imported into GitHub, add this YAML Frontmatter to the top of your .md document:
+
+    ---
+    post_title: 'Post Title'
+    layout: post_type_probably_post
+    published: true_or_false
+    ---
+    Post goes here.
+
+and fill it out with the data related to the post you're writing. Save the post you're writing and commit it directly to the repository. After the post is added to WordPress, an additional commit will be added to the repository, updating the new post with the new information from the database.
+
+If WPGHS cannot find the committer for a given import, it will fallback to the default user as set on the settings page. **Make sure you set this user before you begin importing posts from GitHub.** Without it set, WPGHS will default to no user being set for the author as well as unknown-author revisions.
+
 ### Custom Post Type & Status Support ###
 
 By default, WordPress <--> GitHub Sync only exports published posts and pages. If you want to export additional post types or draft posts, you'll have to hook into the filters `wpghs_whitelisted_post_types` or `wpghs_whitelisted_post_statuses` respectively.
 
 In `wp-content`, create or open the `mu-plugins` folder and create a plugin file there called `wpghs-custom-filters.php`. In it, paste and modify the below code:
 
-```php
-<?php
-/**
- * Plugin Name:  WordPress-GitHub Sync Custom Filters
- * Plugin URI:   https://github.com/benbalter/wordpress-github-sync
- * Description:  Adds support for custom post types and statuses
- * Version:      1.0.0
- * Author:       James DiGioia
- * Author URI:   https://jamesdigioia.com/
- * License:      GPL2
- */
+    <?php
+    /**
+     * Plugin Name:  WordPress-GitHub Sync Custom Filters
+     * Plugin URI:   https://github.com/benbalter/wordpress-github-sync
+     * Description:  Adds support for custom post types and statuses
+     * Version:      1.0.0
+     * Author:       James DiGioia
+     * Author URI:   https://jamesdigioia.com/
+     * License:      GPL2
+     */
+    
+    add_filter('wpghs_whitelisted_post_types', function ($supported_post_types) {
+      return array_merge($supported_post_types, array(
+        // add your custom post types here
+        'gistpen'
+      ));
+    });
+    
+    add_filter('wpghs_whitelisted_post_statuses', function ($supported_post_statuses) {
+      return array_merge($supported_post_statuses, array(
+        // additional statuses available: https://codex.wordpress.org/Post_Status
+        'draft'
+      ));
+    });
 
-add_filter('wpghs_whitelisted_post_types', function ($supported_post_types) {
-  return array_merge($supported_post_types, array(
-    // add your custom post types here
-    'gistpen'
-  ));
-});
+### Add "Edit|View on GitHub" Link ###
 
-add_filter('wpghs_whitelisted_post_statuses', function ($supported_post_statuses) {
-  return array_merge($supported_post_statuses, array(
-    // additional statuses available: https://codex.wordpress.org/Post_Status
-    'draft'
-  ));
-});
-```
+If you want to add a link to your posts on GitHub, there are 4 functions WordPress<-->GitHub Sync makes available for you to use in your themes or as part of `the_content` filter:
+
+* `get_the_github_view_url` - returns the URL on GitHub to view the current post
+* `get_the_github_view_link` - returns an anchor tag (`<a>`) with its href set the the view url
+* `get_the_github_edit_url` - returns the URL on GitHub to edit the current post
+* `get_the_github_edit_link` - returns an anchor tag (`<a>`) with its href set the the edit url
+
+All four of these functions must be used in the loop. If you'd like to retrieve these URLs outside of the loop, instantiate a new `WordPress_GitHub_Sync_Post` object and call `github_edit_url` or `github_view_url` respectively on it:
+
+    // $id can be retrieved from a query or elsewhere
+    $wpghs_post = new WordPress_GitHub_Sync_Post( $id );
+    $url = $wpghs_post->github_view_url();
+
+If you'd like to include an edit link without modifying your theme directly, you can add one of these functions to `the_content` like so:
+
+    add_filter( 'the_content', function( $content ) {
+      if( is_page() || is_single() ) {
+        $content .= get_the_github_edit_link();
+      }
+      return $content;
+    }, 1000 );
 
 ### Additional Customizations ###
 

@@ -1,5 +1,6 @@
 <?php
 use WordPress_GitHub_Sync_Cache as Cache;
+
 /**
  * Interfaces with the GitHub API
  */
@@ -7,8 +8,12 @@ class WordPress_GitHub_Sync_Api {
 
 	/**
 	 * Retrieves the blob data for a given sha
+	 *
+	 * @param string $sha
+	 *
+	 * @return mixed
 	 */
-	public function get_blob($sha) {
+	public function get_blob( $sha ) {
 		if ( ! $this->oauth_token() || ! $this->repository() ) {
 			return false;
 		}
@@ -22,8 +27,12 @@ class WordPress_GitHub_Sync_Api {
 
 	/**
 	 * Retrieves a tree by sha recursively from the GitHub API
+	 *
+	 * @param string $sha
+	 *
+	 * @return mixed
 	 */
-	public function get_tree_recursive($sha) {
+	public function get_tree_recursive( $sha ) {
 		if ( ! $this->oauth_token() || ! $this->repository() ) {
 			return false;
 		}
@@ -34,12 +43,16 @@ class WordPress_GitHub_Sync_Api {
 
 		$data = $this->call( 'GET', $this->tree_endpoint() . '/' . $sha . '?recursive=1' );
 
+		if ( is_wp_error( $data ) ) {
+			return $data;
+		}
+
 		foreach ( $data->tree as $index => $thing ) {
 			// We need to remove the trees because
 			// the recursive tree includes both
 			// the subtrees as well the subtrees' blobs
 			if ( 'tree' === $thing->type ) {
-				unset($data->tree[ $index ]);
+				unset( $data->tree[ $index ] );
 			}
 		}
 
@@ -48,8 +61,12 @@ class WordPress_GitHub_Sync_Api {
 
 	/**
 	 * Retrieves a commit by sha from the GitHub API
+	 *
+	 * @param string $sha
+	 *
+	 * @return mixed
 	 */
-	public function get_commit($sha) {
+	public function get_commit( $sha ) {
 		if ( ! $this->oauth_token() || ! $this->repository() ) {
 			return false;
 		}
@@ -74,8 +91,12 @@ class WordPress_GitHub_Sync_Api {
 
 	/**
 	 * Create the tree by a set of blob ids
+	 *
+	 * @param array $tree
+	 *
+	 * @return mixed
 	 */
-	public function create_tree($tree) {
+	public function create_tree( $tree ) {
 		$body = array( 'tree' => $tree );
 
 		return $this->call( 'POST', $this->tree_endpoint(), $body );
@@ -84,9 +105,12 @@ class WordPress_GitHub_Sync_Api {
 	/**
 	 * Create the commit from tree sha
 	 *
-	 * $sha - string   shasum for the tree for this commit
+	 * @param string $sha shasum for the tree for this commit
+	 * @param string $msg
+	 *
+	 * @return mixed
 	 */
-	public function create_commit($sha, $msg) {
+	public function create_commit( $sha, $msg ) {
 		$parent_sha = $this->last_commit_sha();
 
 		if ( is_wp_error( $parent_sha ) ) {
@@ -106,9 +130,11 @@ class WordPress_GitHub_Sync_Api {
 	/**
 	 * Updates the master branch to point to the new commit
 	 *
-	 * $sha - string   shasum for the commit for the master branch
+	 * @param string $sha shasum for the commit for the master branch
+	 *
+	 * @return mixed
 	 */
-	public function set_ref($sha) {
+	public function set_ref( $sha ) {
 		$body = array(
 			'sha' => $sha,
 		);
@@ -172,21 +198,31 @@ class WordPress_GitHub_Sync_Api {
 	 * Calls the content API to get the post's contents and metadata
 	 *
 	 * Returns Object the response from the API
+	 *
+	 * @param WordPress_GitHub_Sync_Post $post
+	 *
+	 * @return mixed
 	 */
-	public function remote_contents($post) {
+	public function remote_contents( $post ) {
 		return $this->call( 'GET', $this->content_endpoint() . $post->github_path() );
 	}
 
 	/**
 	 * Generic GitHub API interface and response handler
+	 *
+	 * @param string $method
+	 * @param string $endpoint
+	 * @param array $body
+	 *
+	 * @return mixed
 	 */
-	public function call($method, $endpoint, $body = array()) {
+	public function call( $method, $endpoint, $body = array() ) {
 		$args = array(
 			'method'  => $method,
 			'headers' => array(
 				'Authorization' => 'token ' . $this->oauth_token()
 			),
-			'body'    => json_encode( $body )
+			'body'    => function_exists( 'wp_json_encode' ) ? wp_json_encode($body) : json_encode( $body )
 		);
 
 		$response = wp_remote_request( $endpoint, $args );
@@ -194,7 +230,7 @@ class WordPress_GitHub_Sync_Api {
 		$body = json_decode( wp_remote_retrieve_body( $response ) );
 
 		if ( '2' !== substr( $status, 0, 1 ) && '3' !== substr( $status, 0, 1 )  ) {
-			return new WP_Error( $status, $body->message );
+			return new WP_Error( $status, $body ? $body->message : 'Unknown error' );
 		}
 
 		return $body;
@@ -204,7 +240,7 @@ class WordPress_GitHub_Sync_Api {
 	 * Get the data for the current user
 	 */
 	public function export_user() {
-		if ( $user_id = get_option( '_wpghs_export_user_id' ) ) {
+		if ( $user_id = (int) get_option( '_wpghs_export_user_id' ) ) {
 			delete_option( '_wpghs_export_user_id' );
 		} else {
 			$user_id = get_current_user_id();
@@ -213,7 +249,11 @@ class WordPress_GitHub_Sync_Api {
 		$user = get_userdata( $user_id );
 
 		if ( ! $user ) {
-			return array();
+			// @todo is this what we want to include here?
+			return array(
+				'name' => 'Anonymous',
+				'email' => 'anonymous@users.noreply.github.com',
+			);
 		}
 
 		return array(
